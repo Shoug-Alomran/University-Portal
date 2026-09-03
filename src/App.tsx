@@ -21,15 +21,11 @@ function App() {
   const [activeNav, setActiveNav] = useState('Overview')
   const [enrolled, setEnrolled] = useState(() => new Set(courses.filter((course) => course.enrolled).map((course) => course.code)))
   const [toast, setToast] = useState('')
-  const [user, setUser] = useState<User | null | undefined>(undefined)
+  const [user, setUser] = useState<User | null | undefined>(() => isFirebaseConfigured ? undefined : null)
   const usedCredits = useMemo(() => courses.filter((course) => enrolled.has(course.code)).reduce((total, course) => total + course.credits, 0), [enrolled])
 
   useEffect(() => {
-    if (!auth || !isFirebaseConfigured) {
-      setUser(null)
-      return
-    }
-
+    if (!auth) return
     return onAuthStateChanged(auth, setUser)
   }, [])
 

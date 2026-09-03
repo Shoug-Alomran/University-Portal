@@ -1,30 +1,31 @@
-import { signInAnonymously } from 'firebase/auth'
 import { doc, setDoc } from 'firebase/firestore'
-import { auth, db, isFirebaseConfigured } from './firebase'
+import { db, isFirebaseConfigured } from './firebase'
 
-let setupPromise: Promise<string | null> | null = null
+const pendingTasks = new Map<string, Promise<string | null>>()
 
-async function createWorkshopTask() {
-  if (!isFirebaseConfigured || !auth || !db) return null
-
-  const user = auth.currentUser ?? (await signInAnonymously(auth)).user
+async function createWorkshopTask(ownerId: string) {
+  if (!isFirebaseConfigured || !db) return null
 
   await setDoc(
-    doc(db, 'tasks', 'workshop-demo-task'),
+    doc(db, 'tasks', `workshop-demo-${ownerId}`),
     {
       title: 'Finish project outline',
       course: 'CS 101',
       dueDate: '2026-09-10',
       completed: false,
-      ownerId: user.uid,
+      ownerId,
     },
     { merge: true },
   )
 
-  return user.uid
+  return ownerId
 }
 
-export function ensureDemoTask() {
-  setupPromise ??= createWorkshopTask()
-  return setupPromise
+export function ensureDemoTask(ownerId: string) {
+  const existing = pendingTasks.get(ownerId)
+  if (existing) return existing
+
+  const task = createWorkshopTask(ownerId)
+  pendingTasks.set(ownerId, task)
+  return task
 }

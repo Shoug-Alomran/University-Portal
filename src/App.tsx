@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import { ensureDemoTask } from './demoTask'
 
 type Role = 'Student' | 'Instructor' | 'Administrator'
 type Course = { code: string; title: string; instructor: string; credits: number; seats: number; capacity: number; time: string; color: string; enrolled?: boolean }
@@ -18,6 +19,23 @@ function App() {
   const [enrolled, setEnrolled] = useState(() => new Set(courses.filter((course) => course.enrolled).map((course) => course.code)))
   const [toast, setToast] = useState('')
   const usedCredits = useMemo(() => courses.filter((course) => enrolled.has(course.code)).reduce((total, course) => total + course.credits, 0), [enrolled])
+
+  useEffect(() => {
+    let active = true
+
+    ensureDemoTask()
+      .then((ownerId) => {
+        if (active && ownerId) setToast('Firestore demo task is ready')
+      })
+      .catch((error: unknown) => {
+        console.error('Could not create the Firestore demo task:', error)
+        if (active) setToast('Could not create the Firestore demo task')
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
   const switchRole = (nextRole: Role) => { setRole(nextRole); setActiveNav('Overview'); setToast(`Viewing the ${nextRole.toLowerCase()} workspace`) }
   const toggleEnrollment = (course: Course) => {
     const next = new Set(enrolled)

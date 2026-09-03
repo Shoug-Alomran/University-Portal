@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
 import './App.css'
+import AuthScreen from './AuthScreen'
 import { ensureDemoTask } from './demoTask'
+import { auth, isFirebaseConfigured } from './firebase'
 
 type Role = 'Student' | 'Instructor' | 'Administrator'
 type Course = { code: string; title: string; instructor: string; credits: number; seats: number; capacity: number; time: string; color: string; enrolled?: boolean }
@@ -18,24 +21,46 @@ function App() {
   const [activeNav, setActiveNav] = useState('Overview')
   const [enrolled, setEnrolled] = useState(() => new Set(courses.filter((course) => course.enrolled).map((course) => course.code)))
   const [toast, setToast] = useState('')
+  const [user, setUser] = useState<User | null | undefined>(undefined)
   const usedCredits = useMemo(() => courses.filter((course) => enrolled.has(course.code)).reduce((total, course) => total + course.credits, 0), [enrolled])
 
   useEffect(() => {
-    let active = true
+    if (!auth || !isFirebaseConfigured) {
+      setUser(null)
+      return
+    }
 
-    ensureDemoTask()
+    return onAuthStateChanged(auth, setUser)
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+
+    let active = true
+    ensureDemoTask(user.uid)
       .then((ownerId) => {
         if (active && ownerId) setToast('Firestore demo task is ready')
       })
       .catch((error: unknown) => {
         console.error('Could not create the Firestore demo task:', error)
-        if (active) setToast('Could not create the Firestore demo task')
+        if (active) setToast('Signed in, but Firestore blocked the demo task')
       })
 
     return () => {
       active = false
     }
-  }, [])
+  }, [user])
+
+  if (user === undefined) {
+    return <main className="auth-loading">Loading your portal…</main>
+  }
+
+  if (!user) {
+    return <AuthScreen />
+  }
+
+  const displayName = user.displayName || user.email?.split('@')[0] || 'Portal user'
+  const initials = displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()
   const switchRole = (nextRole: Role) => { setRole(nextRole); setActiveNav('Overview'); setToast(`Viewing the ${nextRole.toLowerCase()} workspace`) }
   const toggleEnrollment = (course: Course) => {
     const next = new Set(enrolled)
@@ -45,7 +70,7 @@ function App() {
     else { next.add(course.code); setToast(`${course.code} was added to your schedule`) }
     setEnrolled(next)
   }
-  return <main className="shell"><aside className="sidebar"><a className="brand" href="#top" onClick={() => setActiveNav('Overview')}><span className="brand-mark">U</span><span>univ.<b>portal</b></span></a><div className="role-switcher" aria-label="Preview role">{(Object.keys(navByRole) as Role[]).map((item) => <button className={role === item ? 'role active' : 'role'} onClick={() => switchRole(item)} key={item}>{item}</button>)}</div><nav>{navByRole[role].map((item, index) => <button key={item} className={activeNav === item ? 'nav-item selected' : 'nav-item'} onClick={() => setActiveNav(item)}><span className="nav-icon">{['◫', '▤', '◷', '✦'][index]}</span>{item}</button>)}</nav><div className="sidebar-bottom"><button className="nav-item"><span className="nav-icon">?</span>Help center</button><div className="profile"><span className="avatar">AM</span><span><b>Alex Morgan</b><small>{role}</small></span><span className="more">•••</span></div></div></aside><section className="content" id="top"><header className="topbar"><div className="crumb">{role} <span>/</span> {activeNav}</div><div className="top-actions"><button className="round-button" aria-label="Notifications">♧<i /></button><button className="round-button" aria-label="Settings">⚙</button></div></header>{toast && <div className="toast" role="status">{toast}<button onClick={() => setToast('')} aria-label="Dismiss">×</button></div>}{role === 'Student' && <StudentView activeNav={activeNav} usedCredits={usedCredits} enrolled={enrolled} onToggle={toggleEnrollment} />}{role === 'Instructor' && <InstructorView activeNav={activeNav} setToast={setToast} />}{role === 'Administrator' && <AdminView activeNav={activeNav} setToast={setToast} />}</section></main>
+  return <main className="shell"><aside className="sidebar"><a className="brand" href="#top" onClick={() => setActiveNav('Overview')}><span className="brand-mark">U</span><span>univ.<b>portal</b></span></a><div className="role-switcher" aria-label="Preview role">{(Object.keys(navByRole) as Role[]).map((item) => <button className={role === item ? 'role active' : 'role'} onClick={() => switchRole(item)} key={item}>{item}</button>)}</div><nav>{navByRole[role].map((item, index) => <button key={item} className={activeNav === item ? 'nav-item selected' : 'nav-item'} onClick={() => setActiveNav(item)}><span className="nav-icon">{['◫', '▤', '◷', '✦'][index]}</span>{item}</button>)}</nav><div className="sidebar-bottom"><button className="nav-item"><span className="nav-icon">?</span>Help center</button><div className="profile"><span className="avatar">{initials}</span><span><b>{displayName}</b><small>{role}</small></span><button className="sign-out" onClick={() => auth && signOut(auth)}>Sign out</button></div></div></aside><section className="content" id="top"><header className="topbar"><div className="crumb">{role} <span>/</span> {activeNav}</div><div className="top-actions"><button className="round-button" aria-label="Notifications">♧<i /></button><button className="round-button" aria-label="Settings">⚙</button></div></header>{toast && <div className="toast" role="status">{toast}<button onClick={() => setToast('')} aria-label="Dismiss">×</button></div>}{role === 'Student' && <StudentView activeNav={activeNav} usedCredits={usedCredits} enrolled={enrolled} onToggle={toggleEnrollment} />}{role === 'Instructor' && <InstructorView activeNav={activeNav} setToast={setToast} />}{role === 'Administrator' && <AdminView activeNav={activeNav} setToast={setToast} />}</section></main>
 }
 
 function StudentView({ activeNav, usedCredits, enrolled, onToggle }: { activeNav: string; usedCredits: number; enrolled: Set<string>; onToggle: (course: Course) => void }) { const shownCourses = activeNav === 'My schedule' ? courses.filter((course) => enrolled.has(course.code)) : courses; return <div className="page"><section className="welcome"><div><p className="eyebrow">FALL 2026 · WEEK 7</p><h1>Good morning, Alex <span>✦</span></h1><p className="subtle">Here’s what’s happening with your semester.</p></div><button className="primary">View my schedule <span>→</span></button></section><section className="stats-grid"><Stat icon="◫" value={`${usedCredits} / 18`} label="Credits enrolled" color="purple" /><Stat icon="✓" value="2" label="Active courses" color="green" /><Stat icon="◷" value="68%" label="Semester complete" color="orange" /></section>{activeNav === 'Grades' ? <Grades /> : <><section className="section-heading"><div><p className="eyebrow">{activeNav === 'Course catalog' ? 'DISCOVER' : 'YOUR COURSES'}</p><h2>{activeNav === 'Course catalog' ? 'Course catalog' : 'Continue learning'}</h2></div><button className="text-button">View all <span>→</span></button></section><div className="course-grid">{shownCourses.map((course) => <CourseCard course={course} key={course.code} enrolled={enrolled.has(course.code)} onToggle={onToggle} />)}</div></>}</div> }
